@@ -23,6 +23,10 @@ public class PlayerController : MonoBehaviour
     private bool isSprinting;
     private bool isCrouching;
     private bool canAttack = true;
+    [SerializeField] private Transform attackPoint;
+    [SerializeField] private float attackRange = 1f;
+    [SerializeField] private int damage = 20;
+    [SerializeField] private LayerMask enemyLayers;
 
     void Awake()
     {
@@ -105,8 +109,24 @@ void Jump()
         if (!canAttack) return;
         Debug.Log("Player attacked!");
         canAttack = false;
+
+        // Düşman tespiti ve hasar verme
+        Collider[] hitEnemies = Physics.OverlapSphere(attackPoint.position, attackRange, enemyLayers);
+
+        foreach (Collider enemy in hitEnemies)
+        {
+            EnemyHealth health = enemy.GetComponent<EnemyHealth>();
+
+            if (health != null)
+            {
+                health.TakeDamage(damage);
+            }
+        }
+
         Invoke(nameof(ResetAttack), attackCooldown);
+        
     }
+
 
     void ResetAttack() => canAttack = true;
 }
