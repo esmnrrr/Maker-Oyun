@@ -4,10 +4,10 @@ using UnityEngine;
 
 public class Idle : State
 {
-   public Idle(GameObject _player, Animator _anim, CharacterController _controller,Transform _cam) 
-        : base(_player, _anim, _controller,_cam)
-    { 
-    name=STATE.IDLE;
+    public Idle(GameObject _player, Animator _anim, CharacterController _controller, Transform _cam)
+        : base(_player, _anim, _controller, _cam)
+    {
+        name = STATE.IDLE;
     }
 
     public override void Enter()
@@ -19,6 +19,9 @@ public class Idle : State
     public override void Update()
     {
         base.Update();
-        controller.Move(Vector3.zero); 
+
+        // İleriye hareket veya başka bir input gelirse Idle'dan çıkılabilir
+        // Şimdilik sadece sabit durur
+        controller.Move(Vector3.zero);
     }
 }

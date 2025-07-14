@@ -1,18 +1,14 @@
+// State.cs (Input System + SphereCast ile güncellenmiş versiyon)
+
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.InputSystem;
 
 public abstract class State
 {
-    public enum STATE
-    {
-        GROUNDED, AIRBORNE, IDLE, WALK, RUN, CROUCH, ATTACK, JUMP, AIRATTACK
-    };
-
-    public enum EVENT
-    {
-        ENTER, UPDATE, EXIT
-    };
+    public enum STATE { GROUNDED, AIRBORNE, IDLE, WALK, RUN, CROUCH, ATTACK, JUMP, AIRATTACK };
+    public enum EVENT { ENTER, UPDATE, EXIT };
 
     public STATE name;
     protected EVENT stage;
@@ -23,37 +19,40 @@ public abstract class State
     protected State superState;
     protected State subState;
     public Transform cam;
-    public float walkSpeed = 5f; 
-    public float runSpeed = 10f; 
+
+    public float walkSpeed = 5f;
+    public float runSpeed = 10f;
     public float currentSpeed;
-    public float gravity = -200f; 
-    private Vector3 velocity;       
-    private float ySpeed = 0f;     
+    public float gravity = -9.81f;
+    protected float ySpeed = 0f;
+
+    protected static PlayerInputActions inputActions;
+
+    public static void SetInputActions(PlayerInputActions actions)
+    {
+        inputActions = actions;
+    }
 
     public State(GameObject _player, Animator _anim, CharacterController _controller, Transform _cam)
     {
         player = _player;
         anim = _anim;
         controller = _controller;
-        stage = EVENT.ENTER;
         cam = _cam;
+        stage = EVENT.ENTER;
     }
 
-    protected Vector2 MovementInput => new Vector2(
-        Input.GetAxisRaw("Horizontal"),
-        Input.GetAxisRaw("Vertical")
-    );
+    protected Vector2 MovementInput => inputActions != null ? inputActions.Player.Move.ReadValue<Vector2>() : Vector2.zero;
 
-    protected bool MovementKeyPressed =>
-        MovementInput.x != 0 || MovementInput.y != 0;
+    protected bool MovementKeyPressed => MovementInput != Vector2.zero;
 
     protected void HandleSpeed()
     {
         if (!MovementKeyPressed)
         {
-            currentSpeed = 0f;  
+            currentSpeed = 0f;
         }
-        else if (Input.GetKey(KeyCode.LeftShift))
+        else if (inputActions.Player.Sprint.IsPressed())
         {
             currentSpeed = runSpeed;
         }
@@ -63,70 +62,79 @@ public abstract class State
         }
     }
 
-    public void MovePlayer()
+    public void MovePlayer(float? customYSpeed = null)
     {
-        
         float horizontal = MovementInput.x;
         float vertical = MovementInput.y;
 
-        
-        Vector3 forward = cam.transform.forward;
-        Vector3 right = cam.transform.right;
+        Vector3 moveDirection = Vector3.zero;
 
-        
-        forward.y = 0;
-        right.y = 0;
-
-        
-        forward.Normalize();
-        right.Normalize();
-
-        
-        Vector3 moveDirection = (forward * vertical + right * horizontal).normalized;
-        Debug.Log("Move Direction: " + moveDirection);
-        
-
-        //controller.Move(moveDirection * currentSpeed * Time.deltaTime);
-        //Debug.Log("Current Speed: " + currentSpeed);
-
-        /*if (!controller.isGrounded)
+        if (vertical != 0)
         {
-            ySpeed += gravity * Time.deltaTime;  
+            Vector3 forward = cam.transform.forward;
+            forward.y = 0;
+            forward.Normalize();
+            moveDirection = forward * vertical;
+        }
+
+        if (horizontal != 0)
+        {
+            float rotationSpeed = 200f;
+            player.transform.Rotate(0, horizontal * rotationSpeed * Time.deltaTime, 0);
+        }
+
+        float usedYSpeed = customYSpeed ?? ySpeed;
+
+        if (!IsGrounded())
+        {
+            ySpeed += gravity * Time.deltaTime;
+            usedYSpeed = customYSpeed ?? ySpeed;
         }
         else
         {
-            
             if (ySpeed < 0)
-                ySpeed = -2f;  
-        }*/
+                ySpeed = -2f;
+            usedYSpeed = customYSpeed ?? ySpeed;
+        }
 
-        
-        Vector3 finalVelocity = new Vector3(moveDirection.x * currentSpeed, ySpeed, moveDirection.z * currentSpeed);
+        Vector3 finalVelocity = new Vector3(moveDirection.x * currentSpeed, usedYSpeed, moveDirection.z * currentSpeed);
+        controller.Move(finalVelocity * Time.deltaTime);
 
-        
-        
-
-        if (moveDirection.magnitude >= 0.1f)
+        if (moveDirection.magnitude >= 0.1f && vertical > 0)
         {
-
-            //controller.Move(moveDirection * currentSpeed * Time.deltaTime);
-            controller.Move(finalVelocity * Time.deltaTime);
-
             Quaternion targetRotation = Quaternion.LookRotation(moveDirection);
             player.transform.rotation = Quaternion.Slerp(player.transform.rotation, targetRotation, Time.deltaTime * 10f);
 
-            
-            Vector3 targetCamRotation = new Vector3(0, player.transform.eulerAngles.y, 0); // Keep the camera y-rotation matching player
-            cam.transform.rotation = Quaternion.Slerp(cam.transform.rotation, Quaternion.Euler(targetCamRotation), Time.deltaTime * 5f); // Smooth camera rotation
+            Vector3 targetCamRotation = new Vector3(0, player.transform.eulerAngles.y, 0);
+            cam.transform.rotation = Quaternion.Slerp(cam.transform.rotation, Quaternion.Euler(targetCamRotation), Time.deltaTime * 5f);
         }
-        
-
-
-
-
     }
 
-    
+    protected bool IsGrounded()
+    {
+        // Başlangıç noktası: karakterin tam altı, biraz yukarıdan
+        Vector3 rayOrigin = player.transform.position + Vector3.up * 0.1f;
+
+        // Yarıçap: çok küçük olursa kenardan kaçırır, çok büyük olursa erken temas eder
+        float sphereRadius = controller.radius * 0.5f;
+
+        // Uzunluk: yere ulaşması için yeterli olmalı
+        float rayLength = 0.6f;
+
+        // Kendi layer'ını hariç tut
+        int layerMask = ~(1 << player.layer);
+
+        // Debug çizgisi
+        Debug.DrawRay(rayOrigin, Vector3.down * rayLength, Color.red);
+
+        // Temas kontrolü
+        return Physics.SphereCast(rayOrigin, sphereRadius, Vector3.down, out RaycastHit hit, rayLength, layerMask);
+    }
+
+
+
+
+
     public void SetSuperState(State super) => superState = super;
 
     public void SetSubState(State sub)
@@ -160,7 +168,6 @@ public abstract class State
         stage = EVENT.EXIT;
     }
 
-    
     public virtual State Process()
     {
         if (stage == EVENT.ENTER) Enter();
@@ -170,13 +177,8 @@ public abstract class State
             Exit();
             return nextState;
         }
-
         return this;
     }
 
     public void SetNextState(State next) => nextState = next;
 }
-
-
-
-
